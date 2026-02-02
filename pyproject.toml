@@ -10,8 +10,19 @@ python = "^3.12"
 fastapi = "^0.128.0"
 uvicorn = "^0.40.0"
 poetry-core = "^2.3.0"
+alembic = "^1.18.1"
+poetry = "^2.3.1"
+asyncpg = "^0.31.0"
+dotenv = "^0.9.9"
+psycopg = {extras = ["binary"], version = "^3.3.2"}
+pandas = "^3.0.0"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "black (>=26.1.0,<27.0.0)"
+]
