@@ -5,23 +5,38 @@ from sqlalchemy import pool
 from src.database.models.base import Base
 from alembic import context
 import os
-from dotenv import load_dotenv
+from src.config.settings import settings
 
-load_dotenv()
-
+from src.database.models.payments import (
+    OrderModel,
+    OrderStatus,
+    OrderItemModel,
+    PaymentStatus,
+    PaymentModel,
+)
 from src.database.models.movies import (
     MovieModel,
     GenreModel,
     StarModel,
     DirectorModel,
     CertificationModel,
+    ReviewModel,
+    MovieUserFavorites,
+)
+from src.database.models.accounts import (
+    UserModel,
+    UserProfileModel,
+    UserGroupModel,
+    UserGroupEnum,
+    TokenBaseModel,
+    ActivationTokenModel,
+    PasswordResetTokenModel,
+    RefreshTokenModel,
 )
 
 config = context.config
 
-database_url = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_DB_PORT')}/{os.getenv('POSTGRES_DB')}"
-
-config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
