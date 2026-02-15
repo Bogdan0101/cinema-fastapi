@@ -4,6 +4,7 @@ import selectors
 from decimal import Decimal
 from sqlalchemy import select, insert
 from src.database.postgresql import async_session
+from src.database.models.accounts import UserGroupModel, UserGroupEnum
 from src.database.models.movies import (
     MovieModel,
     GenreModel,
@@ -29,6 +30,9 @@ async def get_or_create(session, model, field, value):
 
 async def load_json():
     async with async_session() as session:
+        print("Initializing user groups...")
+        for role in UserGroupEnum:
+            await get_or_create(session, UserGroupModel, "name", role.value)
         try:
             with open("movies_data.json", "r", encoding="utf-8") as f:
                 movies_list = json.load(f)
