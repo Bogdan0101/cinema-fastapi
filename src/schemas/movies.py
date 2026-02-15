@@ -91,3 +91,25 @@ class MovieDetailSchema(MovieSchemaBase):
     directors: List[NameIdSchema] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReviewCreate(BaseModel):
+    rating: int = Field(1, ge=1, le=10, description="Rating range 1-10.")
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class ReviewResponse(BaseModel):
+    id: int
+    user_id: int
+    movie_id: int
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FavoriteResponse(BaseModel):
+    movie_id: int
+    is_favorite: bool
+    message: str

@@ -1,8 +1,9 @@
 from typing import Type, TypeVar, Generic
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_, delete, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
-
+from src.database.models.movies import MovieUserFavorites
+from src.schemas.movies import FavoriteResponse
 from src.database.models.movies import (
     GenreModel,
     StarModel,
@@ -98,7 +99,7 @@ class EntityCRUD(Generic[T, TS]):
         existing = (await db.execute(check_stmt)).scalars().first()
         if existing:
             raise HTTPException(
-                status_code=409, detail=f"Object with name {data.name} already exists"
+                status_code=409, detail=f"Object with name {data.name} already exists."
             )
         new_obj = self.model(name=data.name)
         db.add(new_obj)
@@ -138,3 +139,43 @@ star_crud = EntityCRUD(StarModel)
 director_crud = EntityCRUD(DirectorModel)
 certification_crud = EntityCRUD(CertificationModel)
 movie_crud = EntityCRUD(MovieModel)
+
+
+async def toggle_movie_favorite(db: AsyncSession, user_id: int, movie_id: int):
+    movie = await db.get(MovieModel, movie_id)
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    stmt = select(MovieUserFavorites).where(
+        and_(
+            MovieUserFavorites.c.user_id == user_id,
+            MovieUserFavorites.c.movie_id == movie_id,
+        )
+    )
+    result = await db.execute(stmt)
+    if_fav = result.first()
+
+    if if_fav:
+        await db.execute(
+            delete(MovieUserFavorites).where(
+                and_(
+                    MovieUserFavorites.c.user_id == user_id,
+                    MovieUserFavorites.c.movie_id == movie_id,
+                )
+            )
+        )
+        await db.commit()
+        return FavoriteResponse(
+            movie_id=movie_id,
+            is_favorite=False,
+            message="Removed from favorites.",
+        )
+    else:
+        await db.execute(
+            insert(MovieUserFavorites).values(user_id=user_id, movie_id=movie_id)
+        )
+        await db.commit()
+        return FavoriteResponse(
+            movie_id=movie_id,
+            is_favorite=True,
+            message="Added to favorites.",
+        )

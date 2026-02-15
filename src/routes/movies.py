@@ -1,10 +1,12 @@
 from typing import Optional
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload, load_only
 
+from src.database.models.accounts import UserModel
+from src.crud.accounts import get_current_moderator, get_current_user
 from src.crud.movies import (
     genre_crud,
     star_crud,
@@ -12,6 +14,7 @@ from src.crud.movies import (
     certification_crud,
     movie_crud,
     EntityCRUD,
+    toggle_movie_favorite,
 )
 from src.database.models.movies import (
     MovieModel,
@@ -23,6 +26,8 @@ from src.database.models.movies import (
     MovieSortOptions,
     MoviesStarsModel,
     CertificationModel,
+    MovieUserFavorites,
+    ReviewModel,
 )
 from src.schemas.movies import (
     MovieSchemaBase,
@@ -34,6 +39,9 @@ from src.schemas.movies import (
     NameIdSchema,
     EntityMovieCountSchema,
     EntityCreateOrUpdateSchema,
+    FavoriteResponse,
+    ReviewCreate,
+    ReviewResponse,
 )
 from src.database.postgresql import get_postgresql_db
 
@@ -121,7 +129,9 @@ async def get_movie_by_id(movie_id: int, db: AsyncSession = Depends(get_postgres
 
 @router.post("/movies/", response_model=MovieDetailSchema, status_code=201)
 async def create_movie(
-    movie_data: MovieCreateSchema, db: AsyncSession = Depends(get_postgresql_db)
+    movie_data: MovieCreateSchema,
+    db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     existing_movie = await db.execute(
         select(MovieModel).where(
@@ -174,6 +184,7 @@ async def update_movie(
     movie_id: int,
     movie_data: MovieUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     movie = await movie_crud.update(db=db, obj_id=movie_id, data=movie_data)
     await db.refresh(movie, ["genres", "stars", "directors", "certification"])
@@ -184,8 +195,149 @@ async def update_movie(
 async def delete_movie(
     movie_id: int,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await movie_crud.delete(db=db, obj_id=movie_id)
+
+
+@router.post("/movies/{movie_id}/favorite/", response_model=FavoriteResponse)
+async def toggle_favorite(
+    movie_id: int,
+    db: AsyncSession = Depends(get_postgresql_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    return await toggle_movie_favorite(
+        db=db, user_id=current_user.id, movie_id=movie_id
+    )
+
+
+@router.get("/favorites/", response_model=PaginateResponseSchema[MovieSchemaBase])
+async def get_favorites(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1),
+    db: AsyncSession = Depends(get_postgresql_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    stmt = (
+        select(MovieModel)
+        .join(MovieUserFavorites, MovieModel.id == MovieUserFavorites.c.movie_id)
+        .where(MovieUserFavorites.c.user_id == current_user.id)
+    )
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_items = (await db.execute(count_stmt)).scalar() or 0
+    if not total_items:
+        raise HTTPException(status_code=404, detail="Not found.")
+    offset = (page - 1) * per_page
+    stmt = stmt.offset(offset).limit(per_page)
+    result = await db.execute(stmt)
+    movies = result.scalars().all()
+    movie_list = [MovieSchemaBase.model_validate(movie) for movie in movies]
+    total_pages = (total_items + per_page - 1) // per_page
+    response = PaginateResponseSchema(
+        items=movie_list,
+        prev_page=(
+            f"/cinema/favorites/?page={page - 1}&per_page={per_page}"
+            if page > 1
+            else None
+        ),
+        next_page=(
+            f"/cinema/favorites/?page={page + 1}&per_page={per_page}"
+            if page < total_pages
+            else None
+        ),
+        total_pages=total_pages,
+        total_items=total_items,
+    )
+    return response
+
+
+@router.post(
+    "/movies/{movie_id}/reviews/", response_model=ReviewResponse, status_code=201
+)
+async def create_movie_review(
+    movie_id: int,
+    review_in: ReviewCreate,
+    db: AsyncSession = Depends(get_postgresql_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    await movie_crud.get_by_id(db=db, obj_id=movie_id)
+    stmt = select(ReviewModel).where(
+        and_(ReviewModel.user_id == current_user.id, ReviewModel.movie_id == movie_id)
+    )
+    exist = await db.execute(stmt)
+    if exist.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Review already exists.")
+    new_review = ReviewModel(
+        user_id=current_user.id,
+        movie_id=movie_id,
+        rating=review_in.rating,
+        comment=review_in.comment,
+    )
+    db.add(new_review)
+    await db.commit()
+    await db.refresh(new_review)
+    return new_review
+
+
+@router.get(
+    "/movies/{movie_id}/reviews/", response_model=PaginateResponseSchema[ReviewResponse]
+)
+async def get_movie_reviews(
+    movie_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1),
+    db: AsyncSession = Depends(get_postgresql_db),
+):
+    await movie_crud.get_by_id(db=db, obj_id=movie_id)
+    stmt = (
+        select(ReviewModel)
+        .where(ReviewModel.movie_id == movie_id)
+        .order_by(ReviewModel.created_at.desc())
+    )
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_items = (await db.execute(count_stmt)).scalar() or 0
+    if not total_items:
+        raise HTTPException(status_code=404, detail="No reviews found.")
+    offset = (page - 1) * per_page
+    result = await db.execute(stmt.offset(offset).limit(per_page))
+    reviews = result.scalars().all()
+    review_list = [ReviewResponse.model_validate(review) for review in reviews]
+    total_pages = (total_items + per_page - 1) // per_page
+
+    return PaginateResponseSchema(
+        items=review_list,
+        prev_page=(
+            f"/cinema/movies/{movie_id}/reviews/?page={page - 1}&per_page={per_page}"
+            if page > 1
+            else None
+        ),
+        next_page=(
+            f"/cinema/movies/{movie_id}/reviews/?page={page + 1}&per_page={per_page}"
+            if page < total_pages
+            else None
+        ),
+        total_items=total_items,
+        total_pages=total_pages,
+    )
+
+
+@router.delete("/movies/{movie_id}/reviews/", status_code=204)
+async def delete_movie_review(
+    movie_id: int,
+    db: AsyncSession = Depends(get_postgresql_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    await movie_crud.get_by_id(db=db, obj_id=movie_id)
+    stmt = select(ReviewModel).where(
+        and_(ReviewModel.movie_id == movie_id, ReviewModel.user_id == current_user.id)
+    )
+    result = await db.execute(stmt)
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="No review found.")
+    await db.delete(review)
+    await db.commit()
+    return None
 
 
 @router.get(
@@ -225,6 +377,7 @@ async def get_genre_by_id(genre_id: int, db: AsyncSession = Depends(get_postgres
 async def create_genre(
     genre_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await genre_crud.create(db=db, data=genre_data)
 
@@ -234,6 +387,7 @@ async def update_genre(
     genre_id: int,
     genre_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await genre_crud.update(
         db=db,
@@ -243,7 +397,11 @@ async def update_genre(
 
 
 @router.delete("/genres/{genre_id}/", status_code=204)
-async def delete_genre(genre_id: int, db: AsyncSession = Depends(get_postgresql_db)):
+async def delete_genre(
+    genre_id: int,
+    db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
+):
     return await genre_crud.delete(
         db=db,
         obj_id=genre_id,
@@ -285,7 +443,9 @@ async def get_star_by_id(star_id: int, db: AsyncSession = Depends(get_postgresql
 
 @router.post("/stars/", response_model=NameIdSchema, status_code=201)
 async def create_star(
-    star_data: EntityCreateOrUpdateSchema, db: AsyncSession = Depends(get_postgresql_db)
+    star_data: EntityCreateOrUpdateSchema,
+    db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await star_crud.create(db=db, data=star_data)
 
@@ -295,6 +455,7 @@ async def update_star(
     star_id: int,
     star_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await star_crud.update(
         db=db,
@@ -304,7 +465,11 @@ async def update_star(
 
 
 @router.delete("/stars/{star_id}/", status_code=204)
-async def delete_star(star_id: int, db: AsyncSession = Depends(get_postgresql_db)):
+async def delete_star(
+    star_id: int,
+    db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
+):
     return await star_crud.delete(
         db=db,
         obj_id=star_id,
@@ -355,6 +520,7 @@ async def get_certification_by_id(
 async def create_certification(
     certification_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await certification_crud.create(db=db, data=certification_data)
 
@@ -366,6 +532,7 @@ async def update_certification(
     certification_id: int,
     certification_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await certification_crud.update(
         db=db,
@@ -376,7 +543,9 @@ async def update_certification(
 
 @router.delete("/certifications/{certification_id}/", status_code=204)
 async def delete_certification(
-    certification_id: int, db: AsyncSession = Depends(get_postgresql_db)
+    certification_id: int,
+    db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await certification_crud.delete(
         db=db,
@@ -425,6 +594,7 @@ async def get_director_by_id(
 async def create_director(
     director_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await director_crud.create(db=db, data=director_data)
 
@@ -434,6 +604,7 @@ async def update_director(
     director_id: int,
     director_data: EntityCreateOrUpdateSchema,
     db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await director_crud.update(
         db=db,
@@ -444,7 +615,9 @@ async def update_director(
 
 @router.delete("/directors/{director_id}/", status_code=204)
 async def delete_director(
-    director_id: int, db: AsyncSession = Depends(get_postgresql_db)
+    director_id: int,
+    db: AsyncSession = Depends(get_postgresql_db),
+    permissions=Depends(get_current_moderator),
 ):
     return await director_crud.delete(
         db=db,

@@ -1,4 +1,5 @@
-from typing import Optional
+from datetime import datetime
+from typing import Optional, TYPE_CHECKING
 import uuid as uuid_obj
 from decimal import Decimal
 from sqlalchemy.dialects.postgresql import UUID
@@ -11,10 +12,17 @@ from sqlalchemy import (
     ForeignKey,
     Table,
     Column,
+    Integer,
+    func,
+    CheckConstraint,
 )
 from sqlalchemy.orm import mapped_column, Mapped, relationship
+
 from src.database.models.base import Base
 from enum import Enum
+
+if TYPE_CHECKING:
+    from src.database.models.accounts import UserModel
 
 
 class MovieSortOptions(str, Enum):
@@ -25,6 +33,13 @@ class MovieSortOptions(str, Enum):
     id_desc = ("id_desc",)
     id_asc = "id_asc"
 
+
+MovieUserFavorites = Table(
+    "movie_user_favorites",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("movie_id", ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True),
+)
 
 MoviesGenresModel = Table(
     "movies_genres",
@@ -76,6 +91,27 @@ MoviesDirectorsModel = Table(
         nullable=False,
     ),
 )
+
+
+class ReviewModel(Base):
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id", ondelete="CASCADE"))
+
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
+
+    user = relationship("UserModel", back_populates="reviews")
+    movie = relationship("MovieModel", back_populates="reviews")
+
+    __table_args__ = (
+        CheckConstraint("rating >= 1 AND rating <= 10", name="rating_1_10"),
+        UniqueConstraint("user_id", "movie_id", name="movie_user_unique_review"),
+    )
 
 
 class GenreModel(Base):
@@ -166,6 +202,15 @@ class MovieModel(Base):
 
     __table_args__ = (
         UniqueConstraint("name", "year", "time", name="unique_movie_constraint"),
+    )
+
+    favorites: Mapped[list["UserModel"]] = relationship(
+        "UserModel", secondary=MovieUserFavorites, back_populates="favorite_movies"
+    )
+    reviews: Mapped[list["ReviewModel"]] = relationship(
+        "ReviewModel",
+        back_populates="movie",
+        cascade="all, delete-orphan",
     )
 
     certification_id: Mapped[int] = mapped_column(
