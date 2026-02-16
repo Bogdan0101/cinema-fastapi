@@ -40,14 +40,14 @@ class EntityCRUD(Generic[T, TS]):
         return obj
 
     async def get_all_with_movie_count(
-            self,
-            db: AsyncSession,
-            page: int,
-            per_page: int,
-            rel_table,
-            rel_field,
-            path: str,
-            count_field=None,
+        self,
+        db: AsyncSession,
+        page: int,
+        per_page: int,
+        rel_table,
+        rel_field,
+        path: str,
+        count_field=None,
     ):
         model: Any = self.model
         if count_field is None:
@@ -149,9 +149,15 @@ class EntityCRUD(Generic[T, TS]):
 
 genre_crud: EntityCRUD[GenreModel, EntityCreateOrUpdateSchema] = EntityCRUD(GenreModel)
 star_crud: EntityCRUD[StarModel, EntityCreateOrUpdateSchema] = EntityCRUD(StarModel)
-director_crud: EntityCRUD[DirectorModel, EntityCreateOrUpdateSchema] = EntityCRUD(DirectorModel)
-certification_crud: EntityCRUD[CertificationModel, EntityCreateOrUpdateSchema] = EntityCRUD(CertificationModel)
-movie_crud: EntityCRUD[MovieModel, Union[MovieCreateSchema, MovieUpdateSchema]] = EntityCRUD(MovieModel)
+director_crud: EntityCRUD[DirectorModel, EntityCreateOrUpdateSchema] = EntityCRUD(
+    DirectorModel
+)
+certification_crud: EntityCRUD[CertificationModel, EntityCreateOrUpdateSchema] = (
+    EntityCRUD(CertificationModel)
+)
+movie_crud: EntityCRUD[MovieModel, Union[MovieCreateSchema, MovieUpdateSchema]] = (
+    EntityCRUD(MovieModel)
+)
 
 
 async def toggle_movie_favorite(db: AsyncSession, user_id: int, movie_id: int):
