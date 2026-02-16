@@ -39,3 +39,12 @@ dev = [
     "mypy (>=1.19.1,<2.0.0)",
     "pytest-cov (>=7.0.0,<8.0.0)"
 ]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+show_error_codes = true
+explicit_package_bases = true
+mypy_path = "src"
