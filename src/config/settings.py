@@ -44,7 +44,10 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         db_name = f"{self.POSTGRES_DB}_test" if self.TESTING else self.POSTGRES_DB
-        return f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_DB_PORT}/{db_name}"
+        return (
+            f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_DB_PORT}/{db_name}"
+        )
 
     model_config = SettingsConfigDict(env_file=".env")
 

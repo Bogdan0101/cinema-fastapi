@@ -4,8 +4,12 @@ from decimal import Decimal
 from sqlalchemy import ForeignKey, Numeric, Enum, func, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from src.database.models.base import Base
+
+if TYPE_CHECKING:
+    from src.database.models.accounts import UserModel
+    from src.database.models.movies import MovieModel
 
 
 class OrderStatus(enum.Enum):
