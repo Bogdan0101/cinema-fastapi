@@ -40,6 +40,17 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
+      - name: Apply migrations
+        env:
+          PYTHONPATH: .
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_HOST: localhost
+          POSTGRES_DB_PORT: 5432
+          POSTGRES_DB: test_db
+          TESTING: "True"
+        run: poetry run alembic upgrade head
+
       - name: Lint with flake8
         run: poetry run flake8 src/
 
