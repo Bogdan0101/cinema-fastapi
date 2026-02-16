@@ -42,9 +42,9 @@ dev = [
 
 [tool.mypy]
 python_version = "3.12"
-check_untyped_defs = true
-ignore_missing_imports = true
-warn_unused_ignores = true
-show_error_codes = true
-explicit_package_bases = true
 mypy_path = "src"
+explicit_package_bases = true
+ignore_missing_imports = true
+namespace_packages = true
+check_untyped_defs = true
+show_error_codes = true
