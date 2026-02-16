@@ -35,7 +35,14 @@ class EntitiesTestCase(BaseCinemaTestCase):
         ]
 
         for entity in entities:
-            url = f"/cinema/{entity['path']}/"
+            path = entity["path"]
+            payload = entity["payload"]
+            update = entity["update"]
+
+            assert isinstance(payload, dict)
+            assert isinstance(update, dict)
+
+            url = f"/cinema/{path}/"
             bad_url = f"{url}99999/"
 
             # GET LIST
@@ -51,7 +58,7 @@ class EntitiesTestCase(BaseCinemaTestCase):
 
             # POST
             res_403_post = await self.client.post(
-                url, json=entity["payload"], headers=self.user_headers
+                url, json=payload, headers=self.user_headers
             )
             self.assertEqual(res_403_post.status_code, 403)
 
@@ -61,18 +68,19 @@ class EntitiesTestCase(BaseCinemaTestCase):
             self.assertEqual(res_422_post.status_code, 422)
 
             res_201_post = await self.client.post(
-                url, json=entity["payload"], headers=self.admin_headers
+                url, json=payload, headers=self.admin_headers
             )
             self.assertEqual(res_201_post.status_code, 201)
             obj_id = res_201_post.json()["id"]
             current_obj_url = f"{url}{obj_id}/"
 
             res_409_post = await self.client.post(
-                url, json=entity["payload"], headers=self.admin_headers
+                url, json=payload, headers=self.admin_headers
             )
             self.assertEqual(res_409_post.status_code, 409)
+            obj_name = payload["name"]
             self.assertIn(
-                f"Object with name {entity["payload"]["name"]} already exists.",
+                f"Object with name {obj_name} already exists.",
                 res_409_post.json()["detail"],
             )
 
@@ -82,12 +90,12 @@ class EntitiesTestCase(BaseCinemaTestCase):
 
             res_200_get = await self.client.get(current_obj_url)
             self.assertEqual(res_200_get.status_code, 200)
-            self.assertEqual(res_200_get.json()["name"], entity["payload"]["name"])
+            self.assertEqual(res_200_get.json()["name"], obj_name)
             self.assertIn("movies", res_200_get.json())
 
             # PATCH
             res_403_patch = await self.client.patch(
-                current_obj_url, json=entity["update"], headers=self.user_headers
+                current_obj_url, json=update, headers=self.user_headers
             )
             self.assertEqual(res_403_patch.status_code, 403)
 
@@ -97,10 +105,10 @@ class EntitiesTestCase(BaseCinemaTestCase):
             self.assertEqual(res_422_patch.status_code, 422)
 
             res_200_patch = await self.client.patch(
-                current_obj_url, json=entity["update"], headers=self.admin_headers
+                current_obj_url, json=update, headers=self.admin_headers
             )
             self.assertEqual(res_200_patch.status_code, 200)
-            self.assertEqual(res_200_patch.json()["name"], entity["update"]["name"])
+            self.assertEqual(res_200_patch.json()["name"], update["name"])
 
             # DELETE
             res_403_delete = await self.client.delete(

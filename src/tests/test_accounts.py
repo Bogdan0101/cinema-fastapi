@@ -82,6 +82,7 @@ class TestUserRegistration(IsolatedAsyncioTestCase):
         )
         user_in_db = result.scalar_one_or_none()
         self.assertIsNotNone(user_in_db)
+        assert user_in_db is not None
         self.assertEqual(user_in_db.email, payload["email"])
         self.mock_email_sender.send_activation_email.assert_called_once()
 
@@ -491,6 +492,7 @@ class TestUserProfiles(IsolatedAsyncioTestCase):
         await self.session.close()
 
     async def test_get_me_after_registration_and_activation(self):
+        assert self.user is not None
         login_response = await self.client.post(
             "/accounts/login/",
             json={"email": self.user.email, "password": "Password123!"},
@@ -532,6 +534,7 @@ class TestUserProfiles(IsolatedAsyncioTestCase):
         self.assertIsNone(data["info"])
 
         await self.session.refresh(self.user.profile)
+        assert self.user.profile is not None
         self.assertEqual(self.user.profile.first_name, "John")
 
     async def test_logout_success(self):

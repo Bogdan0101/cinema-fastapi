@@ -74,18 +74,18 @@ async def register_user(
     settings: Settings = Depends(get_settings),
     email_sender: EmailSenderInterface = Depends(get_email_sender),
 ) -> UserRegistrationResponseSchema:
-    stmt = select(UserModel).where(UserModel.email == user_data.email)
-    result = await db.execute(stmt)
-    existing_user = result.scalars().first()
+    user_stmt = select(UserModel).where(UserModel.email == user_data.email)
+    user_result = await db.execute(user_stmt)
+    existing_user = user_result.scalars().first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"A user with this email {user_data.email} already exists.",
         )
 
-    stmt = select(UserGroupModel).where(UserGroupModel.name == UserGroupEnum.USER)
-    result = await db.execute(stmt)
-    user_group = result.scalars().first()
+    group_stmt = select(UserGroupModel).where(UserGroupModel.name == UserGroupEnum.USER)
+    group_result = await db.execute(group_stmt)
+    user_group = group_result.scalars().first()
     if not user_group:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -298,17 +298,17 @@ async def reset_password(
     settings: Settings = Depends(get_settings),
     email_sender: EmailSenderInterface = Depends(get_email_sender),
 ) -> MessageResponseSchema:
-    stmt = select(UserModel).filter_by(email=data.email)
-    result = await db.execute(stmt)
-    user = result.scalars().first()
+    user_stmt = select(UserModel).filter_by(email=data.email)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalars().first()
     if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email or token."
         )
 
-    stmt = select(PasswordResetTokenModel).filter_by(user_id=user.id)
-    result = await db.execute(stmt)
-    token_record = result.scalars().first()
+    token_stmt = select(PasswordResetTokenModel).filter_by(user_id=user.id)
+    token_result = await db.execute(token_stmt)
+    token_record = token_result.scalars().first()
 
     if not token_record or token_record.token != data.token:
         if token_record:
@@ -467,18 +467,18 @@ async def refresh_access_token(
             detail=str(error),
         )
 
-    stmt = select(RefreshTokenModel).filter_by(token=token_data.refresh_token)
-    result = await db.execute(stmt)
-    refresh_token_record = result.scalars().first()
+    refresh_stmt = select(RefreshTokenModel).filter_by(token=token_data.refresh_token)
+    refresh_result = await db.execute(refresh_stmt)
+    refresh_token_record = refresh_result.scalars().first()
     if not refresh_token_record:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token not found.",
         )
 
-    stmt = select(UserModel).filter_by(id=user_id)
-    result = await db.execute(stmt)
-    user = result.scalars().first()
+    user_stmt = select(UserModel).filter_by(id=user_id)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalars().first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -622,18 +622,18 @@ async def change_user_group(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only for admin",
         )
-    stmt = select(UserGroupModel).where(UserGroupModel.name == new_group)
-    result = await db.execute(stmt)
-    group = result.scalars().first()
-    if not group:
+    group_stmt = select(UserGroupModel).where(UserGroupModel.name == new_group)
+    group_result = await db.execute(group_stmt)
+    group = group_result.scalars().first()
+    if group is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Group not found.",
         )
-    stmt = select(UserModel).where(UserModel.id == user_id)
-    result = await db.execute(stmt)
-    user = result.scalars().first()
-    if not user:
+    user_stmt = select(UserModel).where(UserModel.id == user_id)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalars().first()
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",

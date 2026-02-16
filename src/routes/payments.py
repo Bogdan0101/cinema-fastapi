@@ -37,7 +37,7 @@ async def checkout_movie(
     db: AsyncSession = Depends(get_postgresql_db),
     current_user: UserModel = Depends(get_current_user),
 ):
-    stmt = (
+    order_stmt = (
         select(OrderItemModel)
         .join(OrderModel)
         .where(
@@ -48,7 +48,7 @@ async def checkout_movie(
             )
         )
     )
-    already_owned = (await db.execute(stmt)).scalar_one_or_none()
+    already_owned = (await db.execute(order_stmt)).scalar_one_or_none()
     if already_owned:
         raise HTTPException(status_code=400, detail="You have a movie.")
 
@@ -111,7 +111,7 @@ async def create_checkout_session(
             mode="payment",
             success_url=f"{settings.DOMAIN}/payments/success/?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{settings.DOMAIN}/payments/cancel/",
-            metadata={"order_id": order.id},
+            metadata={"order_id": str(order.id)},
         )
         return {"checkout_url": checkout_session.url}
     except Exception as e:
@@ -202,7 +202,7 @@ async def get_movie_list(
             )
         )
 
-    sort_options = {
+    sort_options: dict[MovieSortOptions, Any] = {
         MovieSortOptions.price_asc: MovieModel.price.asc(),
         MovieSortOptions.price_desc: MovieModel.price.desc(),
         MovieSortOptions.year_new: MovieModel.year.desc(),
@@ -210,7 +210,8 @@ async def get_movie_list(
         MovieSortOptions.id_desc: MovieModel.id.desc(),
         MovieSortOptions.id_asc: MovieModel.id.asc(),
     }
-    stmt = stmt.order_by(sort_options.get(sort_by, MovieModel.id.desc()))
+    sort_criterion = sort_options.get(sort_by, MovieModel.id.desc())
+    stmt = stmt.order_by(sort_criterion)
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_items = (await db.execute(count_stmt)).scalar() or 0

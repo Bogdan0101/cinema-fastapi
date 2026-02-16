@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 
 from sqlalchemy import select, func, or_, and_
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -74,7 +74,7 @@ async def get_movie_list(
                 DirectorModel.name.ilike(search_filter),
             )
         )
-    sort_options = {
+    sort_options: dict[MovieSortOptions, Any] = {
         MovieSortOptions.price_asc: MovieModel.price.asc(),
         MovieSortOptions.price_desc: MovieModel.price.desc(),
         MovieSortOptions.year_new: MovieModel.year.desc(),
@@ -82,7 +82,9 @@ async def get_movie_list(
         MovieSortOptions.id_desc: MovieModel.id.desc(),
         MovieSortOptions.id_asc: MovieModel.id.asc(),
     }
-    stmt = stmt.order_by(sort_options.get(sort_by, MovieModel.id.desc()))
+
+    sort_criterion = sort_options.get(sort_by, MovieModel.id.desc())
+    stmt = stmt.order_by(sort_criterion)
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_items = (await db.execute(count_stmt)).scalar() or 0
 

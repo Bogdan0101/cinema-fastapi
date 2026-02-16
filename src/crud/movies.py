@@ -1,9 +1,14 @@
-from typing import Type, TypeVar, Generic
+from typing import Type, TypeVar, Generic, Union, Any
 from sqlalchemy import select, func, and_, delete, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 from src.database.models.movies import MovieUserFavorites
-from src.schemas.movies import FavoriteResponse
+from src.schemas.movies import (
+    FavoriteResponse,
+    EntityCreateOrUpdateSchema,
+    MovieCreateSchema,
+    MovieUpdateSchema,
+)
 from src.database.models.movies import (
     GenreModel,
     StarModel,
@@ -11,9 +16,11 @@ from src.database.models.movies import (
     CertificationModel,
     MovieModel,
 )
+from src.database.models.base import Base
+from pydantic import BaseModel
 
-T = TypeVar("T")
-TS = TypeVar("TS")
+T = TypeVar("T", bound=Base)
+TS = TypeVar("TS", bound=BaseModel)
 
 
 class EntityCRUD(Generic[T, TS]):
@@ -22,44 +29,46 @@ class EntityCRUD(Generic[T, TS]):
 
     @staticmethod
     async def get_or_create(db: AsyncSession, crud_obj: "EntityCRUD", name: str):
-        stmt = select(crud_obj.model).where(crud_obj.model.name == name)
+        crud_obj_model: Any = crud_obj.model
+        stmt = select(crud_obj_model).where(crud_obj_model.name == name)
         result = await db.execute(stmt)
         obj = result.scalars().first()
         if not obj:
-            obj = crud_obj.model(name=name)
+            obj = crud_obj_model(name=name)
             db.add(obj)
             await db.flush()
         return obj
 
     async def get_all_with_movie_count(
-        self,
-        db: AsyncSession,
-        page: int,
-        per_page: int,
-        rel_table,
-        rel_field,
-        path: str,
-        count_field=None,
+            self,
+            db: AsyncSession,
+            page: int,
+            per_page: int,
+            rel_table,
+            rel_field,
+            path: str,
+            count_field=None,
     ):
+        model: Any = self.model
         if count_field is None:
             count_field = rel_table.c.movie_id
 
         offset = (page - 1) * per_page
-        count_stmt = select(func.count(self.model.id))
+        count_stmt = select(func.count(model.id))
         total_items = (await db.execute(count_stmt)).scalar() or 0
         if not total_items:
             raise HTTPException(status_code=404, detail="Not found")
         stmt = (
             select(
-                self.model.id,
-                self.model.name,
+                model.id,
+                model.name,
                 func.count(count_field).label("movies_count"),
             )
-            .outerjoin(rel_table, self.model.id == rel_field)
-            .group_by(self.model.id)
+            .outerjoin(rel_table, model.id == rel_field)
+            .group_by(model.id)
         )
-        if hasattr(self.model, "default_order_by"):
-            stmt = stmt.order_by(*self.model.default_order_by())
+        if hasattr(model, "default_order_by"):
+            stmt = stmt.order_by(*model.default_order_by())
         result = await db.execute(stmt.offset(offset).limit(per_page))
         items = result.mappings().all()
         total_pages = (total_items + per_page - 1) // per_page
@@ -80,7 +89,8 @@ class EntityCRUD(Generic[T, TS]):
         }
 
     async def get_by_id(self, db: AsyncSession, obj_id: int, options=None):
-        stmt = select(self.model).where(self.model.id == obj_id)
+        model: Any = self.model
+        stmt = select(model).where(model.id == obj_id)
         if options:
             if isinstance(options, list):
                 stmt = stmt.options(*options)
@@ -95,13 +105,16 @@ class EntityCRUD(Generic[T, TS]):
         return obj
 
     async def create(self, db: AsyncSession, data: TS):
-        check_stmt = select(self.model).where(self.model.name == data.name)
+        model: Any = self.model
+        name_val = getattr(data, "name", None)
+
+        check_stmt = select(model).where(model.name == name_val)
         existing = (await db.execute(check_stmt)).scalars().first()
         if existing:
             raise HTTPException(
-                status_code=409, detail=f"Object with name {data.name} already exists."
+                status_code=409, detail=f"Object with name {name_val} already exists."
             )
-        new_obj = self.model(name=data.name)
+        new_obj = model(name=name_val)
         db.add(new_obj)
         try:
             await db.commit()
@@ -134,11 +147,11 @@ class EntityCRUD(Generic[T, TS]):
             raise HTTPException(status_code=400, detail=str(e))
 
 
-genre_crud = EntityCRUD(GenreModel)
-star_crud = EntityCRUD(StarModel)
-director_crud = EntityCRUD(DirectorModel)
-certification_crud = EntityCRUD(CertificationModel)
-movie_crud = EntityCRUD(MovieModel)
+genre_crud: EntityCRUD[GenreModel, EntityCreateOrUpdateSchema] = EntityCRUD(GenreModel)
+star_crud: EntityCRUD[StarModel, EntityCreateOrUpdateSchema] = EntityCRUD(StarModel)
+director_crud: EntityCRUD[DirectorModel, EntityCreateOrUpdateSchema] = EntityCRUD(DirectorModel)
+certification_crud: EntityCRUD[CertificationModel, EntityCreateOrUpdateSchema] = EntityCRUD(CertificationModel)
+movie_crud: EntityCRUD[MovieModel, Union[MovieCreateSchema, MovieUpdateSchema]] = EntityCRUD(MovieModel)
 
 
 async def toggle_movie_favorite(db: AsyncSession, user_id: int, movie_id: int):
